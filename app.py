@@ -333,16 +333,28 @@ def preprocess_text(text: str) -> str:
 # TRAIN MODELS (cached so it only runs once)
 # ─────────────────────────────────────────────
 @st.cache_resource(show_spinner=False)
-def load_and_train(csv_path: str):
+def load_and_train(csv_source: str):
     """
     Load the MBTI dataset, engineer features with TF-IDF,
     and train SVM + Random Forest models for two binary tasks:
       1. Introvert (I) vs Extrovert (E)
       2. Thinking (T) vs Feeling (F)
 
+    csv_source can be:
+      - A raw GitHub URL  (https://raw.githubusercontent.com/...)
+      - A local file path (mbti_1.csv)
+
     Returns a dict with vectorizers and trained models.
     """
-    df = pd.read_csv(csv_path)
+    import io, urllib.request
+
+    if csv_source.startswith("http://") or csv_source.startswith("https://"):
+        # Download from URL into memory — works on Streamlit Cloud
+        with urllib.request.urlopen(csv_source) as resp:
+            raw_bytes = resp.read()
+        df = pd.read_csv(io.BytesIO(raw_bytes))
+    else:
+        df = pd.read_csv(csv_source)
 
     # ── Clean posts ──
     df['clean_posts'] = df['posts'].apply(preprocess_text)
@@ -483,33 +495,39 @@ def main():
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Dataset path selector ──
-    st.markdown('<p class="section-header">⚙️ Setup</p>', unsafe_allow_html=True)
+    # ──────────────────────────────────────────────────────────────────
+    # DATASET SOURCE — update GITHUB_RAW_URL to your own repo URL
+    # Example:
+    #   https://raw.githubusercontent.com/YourName/YourRepo/main/mbti_1.csv
+    #
+    # How to get this URL:
+    #   1. Go to your GitHub repo
+    #   2. Click on mbti_1.csv
+    #   3. Click the "Raw" button
+    #   4. Copy that URL and paste it below
+    # ──────────────────────────────────────────────────────────────────
+    GITHUB_RAW_URL = (
+        "https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/mbti_1.csv"
+    )
+    LOCAL_PATH = "mbti_1.csv"
 
-    with st.container():
-        st.markdown('<div class="soft-card">', unsafe_allow_html=True)
-        st.markdown('<p class="card-title">📂 Dataset Path</p>', unsafe_allow_html=True)
-        csv_path = st.text_input(
-            label="Path to MBTI CSV file",
-            value="mbti_1.csv",
-            help="Download from Kaggle: 'MBTI Personality Type Dataset'. Place mbti_1.csv in the same folder as app.py.",
-            label_visibility="collapsed"
-        )
-        st.markdown(
-            '<div class="info-note">📌 Download the dataset from '
-            '<strong>Kaggle → MBTI Personality Type Dataset</strong> '
-            'and place <code>mbti_1.csv</code> in the same folder as <code>app.py</code>.</div>',
-            unsafe_allow_html=True
-        )
-        st.markdown('</div>', unsafe_allow_html=True)
+    # Auto-select source: use local file when running on your machine,
+    # otherwise fetch from GitHub (works on Streamlit Cloud)
+    if os.path.exists(LOCAL_PATH):
+        csv_source = LOCAL_PATH
+    else:
+        csv_source = GITHUB_RAW_URL
+        if "YOUR_USERNAME" in GITHUB_RAW_URL:
+            st.error(
+                "**Dataset not found.** \n\n"
+                "You are running on Streamlit Cloud but the GitHub URL hasn't been set yet. "
+                "Open `app.py` and replace `YOUR_USERNAME` and `YOUR_REPO` in the "
+                "`GITHUB_RAW_URL` variable with your actual GitHub username and repo name."
+            )
+            st.stop()
 
-    # ── Load / train models ──
-    if not os.path.exists(csv_path):
-        st.warning(f"⚠️  Dataset not found at `{csv_path}`. Please update the path above.")
-        st.stop()
-
-    with st.spinner("🌸 Training models … this takes ~30–60 seconds the first time …"):
-        models = load_and_train(csv_path)
+    with st.spinner("🌸 Loading dataset and training models — this takes ~30–60 s the first time …"):
+        models = load_and_train(csv_source)
 
     st.markdown('<hr class="soft-divider">', unsafe_allow_html=True)
 
