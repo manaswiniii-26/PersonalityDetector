@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
-import re
+import numpy as np
+import re, io, os
+import requests
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.svm import SVC
 from sklearn.ensemble import RandomForestClassifier
@@ -9,16 +11,140 @@ from sklearn.metrics import accuracy_score
 import warnings
 warnings.filterwarnings("ignore")
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────
 # PAGE CONFIG
-# ─────────────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Aura · Personality Analytics",
-    page_icon="✨",
-    layout="wide",
+    page_title="Personality Predictor ✨",
+    page_icon="🌸",
+    layout="centered",
     initial_sidebar_state="collapsed"
 )
 
+# ──────────────────────────────────────────────────────
+# CSS - THE ENTIRE STYLE SECTION
+# ──────────────────────────────────────────────────────
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;600;700;800&display=swap');
+
+*, html, body, [class*="css"] { font-family: 'Nunito', sans-serif !important; box-sizing: border-box; }
+
+.stApp { background: linear-gradient(160deg,#ffe4ec 0%,#fce4f3 40%,#ead6f5 100%); min-height:100vh; }
+
+#MainMenu, footer, header, [data-testid="stToolbar"] { visibility: hidden; }
+
+.block-container { max-width:800px !important; margin:0 auto !important; padding:2rem 1.5rem 4rem !important; }
+
+/* HERO */
+.hero {
+    background: linear-gradient(135deg,#f472b6 0%,#e879f9 60%,#c084fc 100%);
+    border-radius:28px; padding:3rem 2rem; text-align:center;
+    margin-bottom:2.2rem; box-shadow:0 10px 40px rgba(244,114,182,.35);
+    position:relative; overflow:hidden;
+}
+.hero::before { content:''; position:absolute; width:220px; height:220px;
+    background:rgba(255,255,255,.12); border-radius:50%; top:-60px; right:-60px; }
+.hero::after  { content:''; position:absolute; width:160px; height:160px;
+    background:rgba(255,255,255,.08); border-radius:50%; bottom:-50px; left:-40px; }
+.hero-icon  { font-size:3rem; display:block; margin-bottom:.6rem; position:relative; z-index:2; }
+.hero-title { font-size:2.6rem; font-weight:800; color:#fff; margin:0 0 .6rem;
+    line-height:1.2; position:relative; z-index:2; text-shadow:0 2px 12px rgba(0,0,0,.15); }
+.hero-sub   { font-size:1.05rem; color:rgba(255,255,255,.92); font-weight:400;
+    max-width:520px; margin:0 auto; line-height:1.7; position:relative; z-index:2; }
+
+/* SECTION LABEL */
+.sec-label { font-size:.72rem; font-weight:800; letter-spacing:.13em;
+    text-transform:uppercase; color:#c026d3; margin:2rem 0 .7rem; text-align:center; }
+
+/* CARD */
+.card { background:rgba(255,255,255,.78); backdrop-filter:blur(14px);
+    border-radius:22px; padding:1.6rem 1.8rem;
+    box-shadow:0 4px 28px rgba(192,38,211,.1);
+    border:1px solid rgba(244,114,182,.2); margin-bottom:1.2rem; }
+.card-head { font-weight:700; font-size:1rem; color:#9d174d; margin-bottom:.8rem; }
+
+/* CHIPS */
+.chips { display:flex; gap:.9rem; flex-wrap:wrap; }
+.chip  { flex:1; min-width:110px; background:linear-gradient(135deg,#fdf2f8,#fae8ff);
+    border-radius:16px; padding:.9rem .8rem; text-align:center;
+    border:1px solid rgba(244,114,182,.25); box-shadow:0 2px 10px rgba(192,38,211,.08); }
+.chip-val { font-size:1.55rem; font-weight:800; color:#be185d; line-height:1; }
+.chip-lbl { font-size:.72rem; font-weight:600; color:#9d174d; margin-top:.3rem; letter-spacing:.05em; }
+
+/* TILES */
+.tiles { display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:1.2rem; }
+.tile  { flex:1; min-width:140px; background:linear-gradient(135deg,#fff,#fdf4ff);
+    border-radius:18px; padding:1.2rem 1rem; text-align:center;
+    border:1px solid rgba(216,180,254,.4); box-shadow:0 3px 14px rgba(192,38,211,.08); }
+.tile-icon  { font-size:1.8rem; margin-bottom:.4rem; display:block; }
+.tile-title { font-weight:700; font-size:.9rem; color:#7e22ce; }
+.tile-desc  { font-size:.78rem; color:#6b7280; line-height:1.5; margin-top:.3rem; }
+
+/* RADIO BUTTONS - FIX FOR WHITE TEXT */
+div[data-testid="stRadio"] label p {
+    color: #3b0764 !important;
+    font-weight: 700 !important;
+}
+div[data-testid="stRadio"] label {
+    color: #7e22ce !important;
+}
+
+/* TEXTAREA */
+textarea { border-radius:14px !important; border:2px solid #f9a8d4 !important;
+    background:rgba(255,255,255,.95) !important; color:#3b0764 !important;
+    font-size:.97rem !important; font-family:'Nunito',sans-serif !important; transition:border .2s !important; }
+textarea:focus { border-color:#e879f9 !important; box-shadow:0 0 0 3px rgba(232,121,249,.18) !important; }
+
+/* BUTTON */
+div.stButton > button {
+    background: linear-gradient(135deg,#f472b6 0%,#c084fc 100%) !important;
+    color:#fff !important; font-family:'Nunito',sans-serif !important;
+    font-weight:800 !important; font-size:1.1rem !important;
+    border:none !important; border-radius:50px !important;
+    padding:.75rem 2rem !important; width:100% !important;
+    cursor:pointer !important; box-shadow:0 6px 24px rgba(244,114,182,.45) !important;
+    transition:all .25s ease !important; letter-spacing:.04em !important;
+}
+div.stButton > button:hover { transform:translateY(-3px) !important; box-shadow:0 10px 32px rgba(192,38,211,.4) !important; }
+
+/* RESULT CARDS */
+.res-grid { display:flex; gap:1rem; margin:1rem 0; }
+.res-card { flex:1; background:linear-gradient(135deg,#fdf2f8 0%,#fae8ff 100%);
+    border-radius:20px; padding:1.4rem 1.3rem; border-left:5px solid #f472b6;
+    box-shadow:0 4px 18px rgba(244,114,182,.18); }
+.res-card.purple { border-left-color:#a855f7; }
+.res-tag   { font-size:.7rem; font-weight:700; letter-spacing:.1em;
+    text-transform:uppercase; color:#be185d; margin-bottom:.35rem; }
+.res-tag.pt { color:#7e22ce; }
+.res-name  { font-size:1.5rem; font-weight:800; color:#831843; margin-bottom:.4rem; }
+.res-name.pt { color:#581c87; }
+.res-desc  { font-size:.87rem; color:#4b5563; line-height:1.6; }
+.pill { display:inline-block; margin-top:.7rem; padding:.2rem .9rem; border-radius:50px;
+    font-size:.78rem; font-weight:700; background:rgba(244,114,182,.18);
+    color:#9d174d; border:1px solid rgba(244,114,182,.35); }
+.pill.pt { background:rgba(168,85,247,.15); color:#6b21a8; border-color:rgba(168,85,247,.3); }
+
+/* AFFIRMATION WRAP */
+.affirmation-wrap { 
+    background:rgba(255,255,255,.5); 
+    border-radius:22px; padding:2rem; 
+    text-align:center; border:1px solid rgba(244,114,182,.2);
+}
+.affirmation-quote { font-size:1.2rem; font-weight:700; color:#3b0764; font-style:italic; margin-bottom:1rem; }
+.affirmation-sub { font-size:0.8rem; color:#9d174d; text-transform:uppercase; letter-spacing:1px; }
+
+/* SUMMARY BANNER */
+.summary { background:linear-gradient(135deg,#f472b6,#a855f7); border-radius:20px;
+    padding:1.6rem 2rem; text-align:center; margin:1rem 0;
+    box-shadow:0 6px 28px rgba(244,114,182,.3); }
+.summary p { color:#fff; font-size:1.08rem; line-height:1.7; margin:0; font-weight:600; }
+
+/* PROGRESS */
+div[data-testid="stProgress"] > div > div {
+    background: linear-gradient(90deg,#f472b6,#c084fc) !important; border-radius:99px !important; }
+
+.divider { border:none; border-top:1.5
 # ─────────────────────────────────────────────────────────────────────────────
 # STYLES
 # ─────────────────────────────────────────────────────────────────────────────
