@@ -349,10 +349,17 @@ def load_and_train(csv_source: str):
     import io, urllib.request
 
     if csv_source.startswith("http://") or csv_source.startswith("https://"):
-        # Download from URL into memory — works on Streamlit Cloud
-        with urllib.request.urlopen(csv_source) as resp:
-            raw_bytes = resp.read()
-        df = pd.read_csv(io.BytesIO(raw_bytes))
+        import requests
+        # Google Drive sometimes redirects for large files — follow it
+        session = requests.Session()
+        resp = session.get(csv_source, stream=True)
+        # Handle the "virus scan warning" redirect Google shows for large files
+        for key, value in resp.cookies.items():
+            if key.startswith("download_warning"):
+                resp = session.get(csv_source + "&confirm=" + value, stream=True)
+                break
+        resp.raise_for_status()
+        df = pd.read_csv(io.StringIO(resp.content.decode("utf-8")))
     else:
         df = pd.read_csv(csv_source)
 
@@ -506,28 +513,27 @@ def main():
     #   3. Click the "Raw" button
     #   4. Copy that URL and paste it below
     # ──────────────────────────────────────────────────────────────────
-    GITHUB_RAW_URL = (
-        "https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/mbti_1.csv"
-    )
-    LOCAL_PATH = "mbti_1.csv"
-
-    # Auto-select source: use local file when running on your machine,
-    # otherwise fetch from GitHub (works on Streamlit Cloud)
-    if os.path.exists(LOCAL_PATH):
-        csv_source = LOCAL_PATH
-    else:
-        csv_source = GITHUB_RAW_URL
-        if "YOUR_USERNAME" in GITHUB_RAW_URL:
-            st.error(
-                "**Dataset not found.** \n\n"
-                "You are running on Streamlit Cloud but the GitHub URL hasn't been set yet. "
-                "Open `app.py` and replace `YOUR_USERNAME` and `YOUR_REPO` in the "
-                "`GITHUB_RAW_URL` variable with your actual GitHub username and repo name."
-            )
-            st.stop()
+    # Google Drive direct download link for mbti_1.csv
+    GDRIVE_FILE_ID = "1WpYslfFqGPdMHChZOrHjpcCsfehdvshN"
+    csv_source = f"https://drive.google.com/uc?export=download&id={GDRIVE_FILE_ID}"
 
     with st.spinner("🌸 Loading dataset and training models — this takes ~30–60 s the first time …"):
-        models = load_and_train(csv_source)
+        try:
+            models = load_and_train(csv_source)
+        except ValueError as e:
+            st.error(f"**Dataset Error:**\n\n{e}")
+            st.info(
+                "**How to fix the Git LFS problem:**\n"
+                "1. Delete `mbti_1.csv` from your GitHub repo\n"
+                "2. On your computer, run: `git lfs untrack '*.csv'` then `git rm --cached mbti_1.csv`\n"
+                "3. Re-add and commit: `git add mbti_1.csv && git commit -m \'add csv without lfs\'`\n"
+                "4. Push again — the Raw URL will now return proper CSV data\n\n"
+                "**Alternative:** Upload via the GitHub website UI (drag & drop) — this bypasses LFS."
+            )
+            st.stop()
+        except Exception as e:
+            st.error(f"**Unexpected error loading dataset:** {e}")
+            st.stop()
 
     st.markdown('<hr class="soft-divider">', unsafe_allow_html=True)
 
