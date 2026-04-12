@@ -117,11 +117,9 @@ div.stButton > button:hover { background: #5a3840 !important; }
 textarea { border-radius: 8px !important; border: 0.5px solid #e8d8e0 !important; background: #fffaf9 !important; color: #3a2830 !important; }
 
 /* Radio button labels */
-div[data-baseweb="radio"] label {
-    color: #000000 !important;
-}
-
-div[data-baseweb="radio"] span {
+div[data-testid="stRadio"] label,
+div[data-testid="stRadio"] span,
+div[data-testid="stRadio"] p {
     color: #3a2830 !important;
 }
 
